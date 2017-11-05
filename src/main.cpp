@@ -12,6 +12,10 @@ constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
 double rad2deg(double x) { return x * 180 / pi(); }
 
+int counter = 0;
+int max_steps = 0;
+double error = 0;
+
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
 // else the empty string "" will be returned.
@@ -28,13 +32,25 @@ std::string hasData(std::string s) {
   return "";
 }
 
-int main()
+void restart(uWS::WebSocket<uWS::SERVER> ws) {
+  std::string reset_msg = "42[\"reset\",{}]";
+  ws.send(reset_msg.data(), reset_msg.length(), uWS::OpCode::TEXT);
+}
+
+int main(int argc, char *argv[])
 {
   uWS::Hub h;
 
   PID pid;
   // TODO: Initialize the pid variable.
-  pid.Init(0.5, 0.00004, 0.5);
+  if (argc == 4 || argc == 5) {
+    pid.Init(atof(argv[1]), atof(argv[2]), atof(argv[3]));
+    if (argc == 5) {
+      max_steps = atoi(argv[4]);
+    }
+  } else {
+    pid.Init(0.5, 0.00004, 0.5);
+  }
 
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
@@ -47,6 +63,9 @@ int main()
         auto j = json::parse(s);
         std::string event = j[0].get<std::string>();
         if (event == "telemetry") {
+          if (max_steps > 0) {
+            counter++;
+          }
           // j[1] is the data JSON object
           double cte = std::stod(j[1]["cte"].get<std::string>());
           double speed = std::stod(j[1]["speed"].get<std::string>());
@@ -59,18 +78,28 @@ int main()
           * another PID controller to control the speed!
           */
 
+          if (max_steps > 0 && counter >= max_steps) {
+            error += cte * cte;
+          }
+
           pid.UpdateError(cte);
           steer_value = pid.TotalError();
           
           // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
+          //std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
 
           json msgJson;
           msgJson["steering_angle"] = steer_value;
           msgJson["throttle"] = 0.3;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          std::cout << msg << std::endl;
+          //std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+
+          if (max_steps > 0 && counter == 2 * max_steps) {
+            restart(ws);
+            std::cout << error;
+            exit(0);
+          }
         }
       } else {
         // Manual driving
@@ -96,22 +125,30 @@ int main()
   });
 
   h.onConnection([&h](uWS::WebSocket<uWS::SERVER> ws, uWS::HttpRequest req) {
-    std::cout << "Connected!!!" << std::endl;
+    if (max_steps == 0) {
+      std::cout << "Connected!!!" << std::endl;
+    }
   });
 
   h.onDisconnection([&h](uWS::WebSocket<uWS::SERVER> ws, int code, char *message, size_t length) {
     ws.close();
-    std::cout << "Disconnected" << std::endl;
+    if (max_steps == 0) {
+      std::cout << "Disconnected" << std::endl;
+    }
   });
 
   int port = 4567;
   if (h.listen(port))
   {
-    std::cout << "Listening to port " << port << std::endl;
+    if (max_steps == 0) {
+      std::cout << "Listening to port " << port << std::endl;
+    }
   }
   else
   {
-    std::cerr << "Failed to listen to port" << std::endl;
+    if (max_steps == 0) {
+      std::cerr << "Failed to listen to port" << std::endl;
+    }
     return -1;
   }
   h.run();
