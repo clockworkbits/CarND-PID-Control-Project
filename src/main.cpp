@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
       max_steps = atoi(argv[4]);
     }
   } else {
-    pid.Init(0.5, 0.00004, 0.5);
+    pid.Init(0.281, 0.001, 5.233);
   }
 
   h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
